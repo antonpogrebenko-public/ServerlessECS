@@ -1,0 +1,110 @@
+service: serverless-ecs
+
+provider:
+  name: aws
+  runtime: python3.12
+  versionFunctions: false
+  stage: ${opt:stage, 'staging'}
+  logRetentionInDays: 1
+
+  ecr:
+    images:
+      hello-world-image:
+        path: ./
+        file: Dockerfile
+        platform: linux/amd64
+
+
+resources:
+  Resources:
+    ServerlessECSTaskExecutionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: ServerlessECSTaskExecutionRolePolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                    - ecr:*
+                    - ssm:*
+                  Resource: "*"
+
+    ServerlessECSTaskRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: ServerlessECSTaskRolePolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - logs:PutLogEvents
+                    - ssm:*
+                  Resource: "*"
+
+
+    ServerlessECSLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: "/hello-world-${opt:stage}"
+        RetentionInDays: 1
+
+    ServerlessECSTaskDefinition:
+      Type: AWS::ECS::TaskDefinition
+      Properties:
+        Family: "hello-world-${opt:stage}"
+        RequiresCompatibilities:
+          - FARGATE
+        Cpu: "256"
+        Memory: "512"
+        NetworkMode: awsvpc
+        ExecutionRoleArn: !GetAtt ServerlessECSTaskExecutionRole.Arn
+        TaskRoleArn: !GetAtt ServerlessECSTaskRole.Arn
+        ContainerDefinitions:
+          - Name: "hello-world"
+            Image: "${aws:accountId}.dkr.ecr.${opt:region}.amazonaws.com/serverless-hello-world-${opt:stage}:hello-world-image"
+            Essential: true
+            Environment:
+              - Name: AWS_REGION
+                Value: ${opt:region}
+              - Name: STAGE
+                Value: ${opt:stage}
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-region: ${opt:region}
+                awslogs-group: "/hello-world-${opt:stage}"
+                awslogs-stream-prefix: ecs
+
+functions:
+  only-for-image:
+    description: "Only for image"
+    image:
+      name: hello-world-image
+
+package:
+  patterns:
+    - '!node_modules/**'
+    - '!.idea/**'
+    - '!__pycache__/**'
+    - '!package-lock.json'
+    - '!README.md'
